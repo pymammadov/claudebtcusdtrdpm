@@ -94,45 +94,50 @@ class StrategyOptimizer:
 
         template = config.template
         params = config.parameters["indicators"]
-        exit_config = config.parameters["exit"]
+        exit_cfg = config.parameters["exit"]
 
-        def signal_func(df: pd.DataFrame, idx: int, mode: str = "entry", direction: str = None) -> int:
-            """
-            Signal function for backtester.
+        exit_ratios = {
+            "fixed_rr_1.5":   (1.5, 2.25),
+            "fixed_rr_2.0":   (1.5, 3.0),
+            "fixed_rr_2.5":   (1.5, 3.75),
+            "fixed_rr_3.0":   (1.5, 4.5),
+            "atr_based":      (1.5, 3.0),
+            "trailing_stop":  (1.5, 3.0),
+            "signal_reversal":(1.5, 3.0),
+        }
+        sl_mult, tp_mult = exit_ratios.get(exit_cfg, (1.5, 3.0))
 
-            Returns:
-                1 = entry long
-                -1 = entry short
-                2 = exit signal
-                0 = no signal
-            """
-            try:
-                if mode == "entry":
-                    if template == "TEMPLATE_A":
-                        return self._signal_template_a(df, idx, params)
-                    elif template == "TEMPLATE_B":
-                        return self._signal_template_b(df, idx, params)
-                    elif template == "TEMPLATE_C":
-                        return self._signal_template_c(df, idx, params)
-                    elif template == "TEMPLATE_D":
-                        return self._signal_template_d(df, idx, params)
-                    elif template == "TEMPLATE_E":
-                        return self._signal_template_e(df, idx, params)
-                elif mode == "exit":
-                    if exit_config == "signal_reversal":
-                        # Reversed entry signal acts as exit
-                        if direction == "long":
-                            return self._signal_template_a(df, idx, params) == -1
-                        else:
-                            return self._signal_template_a(df, idx, params) == 1
-                    # Other exits handled by TP/SL in engine
-                    return 0
-
-            except (KeyError, IndexError, TypeError):
-                return 0
-
+        def _get_entry_signal(df, idx):
+            if template == "TEMPLATE_A":
+                return self._signal_template_a(df, idx, params)
+            elif template == "TEMPLATE_B":
+                return self._signal_template_b(df, idx, params)
+            elif template == "TEMPLATE_C":
+                return self._signal_template_c(df, idx, params)
+            elif template == "TEMPLATE_D":
+                return self._signal_template_d(df, idx, params)
+            elif template == "TEMPLATE_E":
+                return self._signal_template_e(df, idx, params)
             return 0
 
+        def signal_func(df, idx, mode="entry", direction=None):
+            try:
+                if mode == "entry":
+                    return _get_entry_signal(df, idx)
+                elif mode == "exit":
+                    if exit_cfg == "signal_reversal":
+                        sig = _get_entry_signal(df, idx)
+                        if direction == "long" and sig == -1:
+                            return 1
+                        if direction == "short" and sig == 1:
+                            return 1
+                    return 0
+            except Exception:
+                return 0
+            return 0
+
+        signal_func.sl_mult = sl_mult
+        signal_func.tp_mult = tp_mult
         return signal_func
 
     def _signal_template_a(self, df: pd.DataFrame, idx: int, params: Dict) -> int:

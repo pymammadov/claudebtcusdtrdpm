@@ -57,50 +57,67 @@ class BacktestEngine:
         self.equity_curve = None
         self.metrics = {}
 
-    def backtest(
-        self,
-        signal_func: Callable[[pd.DataFrame, int], Tuple[int, str]],
-    ) -> Dict[str, float]:
+    def backtest(self, signal_func) -> Dict[str, float]:
         """
         Run backtest with given signal function.
+        Includes TP/SL exit logic based on ATR.
 
         Args:
-            signal_func: Function(df, idx) -> (exit_signal, direction)
-                        Returns: 0=hold, 1=entry_long, -1=entry_short
-                                 2=exit, or (entry_idx if already in trade)
+            signal_func: Function(df, idx, mode, direction) -> signal
+                        Must have sl_mult and tp_mult attributes
 
         Returns:
             Dictionary of performance metrics
         """
         n = len(self.df)
-        balance = 10000.0  # Start with $10k
+        balance = 10000.0
         entry_balance = balance
-        position = None  # (direction, entry_idx, entry_price, size)
+        position = None
         equity = [balance]
-        entry_idx = None
 
-        for i in range(1, n):  # Start from 1 (need prior candle for entry signal)
-            current_price = self.df["close"].iloc[i]
+        close_arr = self.df["close"].values
+        high_arr  = self.df["high"].values
+        low_arr   = self.df["low"].values
+        atr_arr   = self.df["atr_14"].values
 
-            # Process exit signal if in position
+        for i in range(1, n):
+            current_close = close_arr[i]
+            current_high  = high_arr[i]
+            current_low   = low_arr[i]
+
             if position is not None:
-                direction, entry_price, size, entry_idx_val = position
+                direction, entry_price, size, entry_idx_val, tp_price, sl_price = position
 
-                # Check exit signal
-                exit_signal = signal_func(self.df, i, mode="exit", direction=direction)
+                exit_price = None
+                if direction == "long":
+                    if current_low <= sl_price:
+                        exit_price = sl_price
+                    elif current_high >= tp_price:
+                        exit_price = tp_price
+                else:
+                    if current_high >= sl_price:
+                        exit_price = sl_price
+                    elif current_low <= tp_price:
+                        exit_price = tp_price
 
-                if exit_signal > 0:  # Exit signal triggered
-                    exit_price = current_price * (1 - self.config.slippage if direction == "long" else 1 + self.config.slippage)
-                    exit_proceeds = size * exit_price * (1 - self.config.taker_fee)
+                if exit_price is None:
+                    exit_sig = signal_func(self.df, i, mode="exit", direction=direction)
+                    if exit_sig > 0:
+                        exit_price = current_close * (
+                            1 - self.config.slippage if direction == "long"
+                            else 1 + self.config.slippage
+                        )
 
+                if exit_price is not None:
+                    fee = self.config.taker_fee
+                    slip = self.config.slippage
                     if direction == "long":
-                        pnl = exit_proceeds - (size * entry_price * (1 + self.config.taker_fee))
+                        exit_price_adj = exit_price * (1 - slip)
+                        pnl = size * (exit_price_adj * (1 - fee) - entry_price * (1 + fee))
                     else:
-                        pnl = (size * entry_price * (1 - self.config.taker_fee)) - exit_proceeds
+                        exit_price_adj = exit_price * (1 + slip)
+                        pnl = size * (entry_price * (1 - fee) - exit_price_adj * (1 + fee))
 
-                    pnl_pct = pnl / (size * entry_price * (1 + self.config.taker_fee))
-
-                    # Record trade
                     trade = Trade(
                         entry_idx=entry_idx_val,
                         entry_price=entry_price,
@@ -110,50 +127,55 @@ class BacktestEngine:
                         exit_time=self.df["timestamp"].iloc[i],
                         direction=direction,
                         size=size,
-                        entry_cost=size * entry_price * (1 + self.config.taker_fee),
-                        exit_proceeds=exit_proceeds,
+                        entry_cost=size * entry_price * (1 + fee),
+                        exit_proceeds=size * exit_price * (1 - fee),
                         pnl=pnl,
-                        pnl_pct=pnl_pct,
+                        pnl_pct=pnl / (size * entry_price + 1e-10),
                         max_drawdown_in_trade=0.0,
                     )
                     self.trades.append(trade)
-
                     balance += pnl
                     position = None
 
-            # Check entry signal if no position
             if position is None:
                 entry_signal = signal_func(self.df, i, mode="entry")
-
-                if entry_signal in [1, -1]:  # Entry signal
+                if entry_signal in [1, -1]:
                     direction = "long" if entry_signal == 1 else "short"
-                    entry_price = current_price * (1 + self.config.slippage if direction == "long" else 1 - self.config.slippage)
+                    slip = self.config.slippage
+                    entry_price = current_close * (1 + slip if direction == "long" else 1 - slip)
 
-                    # Calculate position size based on ATR and risk
-                    atr = self.df["atr_14"].iloc[i]
-                    if pd.notna(atr) and atr > 0:
-                        risk_amount = balance * self.config.risk_per_trade_pct
-                        size = risk_amount / atr
+                    atr = atr_arr[i]
+                    if np.isnan(atr) or atr <= 0:
+                        equity.append(balance)
+                        continue
+
+                    risk_amount = balance * self.config.risk_per_trade_pct
+                    size = risk_amount / atr
+
+                    sl_mult = getattr(signal_func, 'sl_mult', 1.5)
+                    tp_mult = getattr(signal_func, 'tp_mult', 3.0)
+                    sl_dist = atr * sl_mult
+                    tp_dist = atr * tp_mult
+
+                    if direction == "long":
+                        sl_price = entry_price - sl_dist
+                        tp_price = entry_price + tp_dist
                     else:
-                        size = balance / entry_price * 0.01  # Default: 1% of balance
+                        sl_price = entry_price + sl_dist
+                        tp_price = entry_price - tp_dist
 
                     entry_cost = size * entry_price * (1 + self.config.taker_fee)
-
-                    if entry_cost <= balance:  # Only enter if have funds
-                        position = (direction, entry_price, size, i)
+                    if entry_cost <= balance:
+                        position = (direction, entry_price, size, i, tp_price, sl_price)
                         balance -= entry_cost
 
             equity.append(balance)
 
-        # Build equity curve
         self.equity_curve = pd.DataFrame({
             "timestamp": self.df["timestamp"],
             "equity": equity,
         })
-
-        # Calculate metrics
         self._calculate_metrics(entry_balance)
-
         return self.metrics
 
     def _calculate_metrics(self, initial_balance: float):
