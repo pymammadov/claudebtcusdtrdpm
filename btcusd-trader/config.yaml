@@ -1,0 +1,52 @@
+# Live Trading Bot Configuration
+# ================================
+
+# Exchange settings
+exchange: binance_futures
+symbol: BTCUSDT
+timeframe: 15m
+
+# API credentials (use environment variables)
+api_key: ${BINANCE_API_KEY}
+api_secret: ${BINANCE_API_SECRET}
+
+# Initial account balance (in USDT)
+initial_balance: 1000.0
+
+# Trading mode
+paper_trading: true  # MUST be true before going live!
+
+# Risk management
+risk_per_trade_pct: 1.0       # Risk 1% of account per trade
+max_daily_loss_pct: 3.0       # Daily loss kill-switch at 3%
+max_drawdown_pct: 20.0        # Max drawdown before halt
+max_open_positions: 1          # Only 1 position at a time
+
+# Fees (Binance Futures, maker/taker)
+maker_fee_pct: 0.02
+taker_fee_pct: 0.04
+
+# Slippage (worst-case)
+slippage_pct: 0.04
+
+# Data feed settings
+data_fetch_interval_sec: 60    # Update every 60 seconds
+buffer_size: 500               # Keep 500 candles in memory
+
+# Telegram notifications (optional)
+telegram_enabled: false
+telegram_bot_token: ${TELEGRAM_BOT_TOKEN}
+telegram_chat_id: ${TELEGRAM_CHAT_ID}
+
+# Logging
+log_level: INFO
+log_file: trading_bot.log
+log_max_bytes: 10485760        # 10MB
+log_backup_count: 5
+
+# Paper trading duration
+min_paper_trading_days: 30
+min_paper_trading_trades: 20
+
+# DO NOT CHANGE BELOW
+version: "1.0"
