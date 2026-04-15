@@ -5,6 +5,7 @@ Generates all models, backtests them, and selects the winner.
 
 import json
 import logging
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Callable
@@ -18,6 +19,7 @@ from engine import BacktestEngine, BacktestConfig
 from scorer import ModelScorer, ModelScore
 
 logger = logging.getLogger(__name__)
+TIMEFRAMES = ["15m", "1h", "4h"]
 
 
 class StrategyOptimizer:
@@ -57,11 +59,12 @@ class StrategyOptimizer:
             handlers=[handler_file, handler_console],
         )
 
-    def load_and_prepare_data(self):
+    def load_and_prepare_data(self, timeframes: List[str] = None):
         """Load all timeframe data and compute indicators."""
         logger.info("Loading and preparing data...")
+        selected_timeframes = timeframes or TIMEFRAMES
 
-        for timeframe in ["15m", "1h", "4h"]:
+        for timeframe in selected_timeframes:
             try:
                 parquet_file = self.data_dir / f"BTCUSDT_{timeframe}.parquet"
 
@@ -357,11 +360,11 @@ class StrategyOptimizer:
         logger.info("=" * 80)
 
         # Load data
-        self.load_and_prepare_data()
+        self.load_and_prepare_data(timeframes=TIMEFRAMES)
 
         # Generate all model configurations
         logger.info("Generating strategy configurations...")
-        configs = StrategyTemplates.generate_all_configs()[:100]
+        configs = StrategyTemplates.generate_all_configs(timeframes=TIMEFRAMES)[:100]
         logger.info(f"Generated {len(configs)} unique model configurations")
 
         # Backtest all models (in-sample)
@@ -486,6 +489,17 @@ class StrategyOptimizer:
 
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--timeframe",
+        type=str,
+        default="15m",
+        choices=["15m", "1h", "4h", "all"],
+    )
+    args = parser.parse_args()
+    global TIMEFRAMES
+    TIMEFRAMES = ["15m", "1h", "4h"] if args.timeframe == "all" else [args.timeframe]
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
