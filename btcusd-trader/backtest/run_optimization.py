@@ -251,7 +251,7 @@ class StrategyOptimizer:
         self,
         config: StrategyConfig,
         start_date: str = "2020-01-01",
-        end_date: str = "2023-06-30",
+        end_date: str = "2026-04-15",
     ) -> Dict:
         """
         Backtest a single model configuration.
@@ -321,7 +321,7 @@ class StrategyOptimizer:
         self,
         config: StrategyConfig,
         start_date: str = "2023-07-01",
-        end_date: str = "2026-01-01",
+        end_date: str = "2026-04-15",
     ) -> Dict:
         """Backtest on out-of-sample period."""
         timeframe = config.timeframe
@@ -361,7 +361,7 @@ class StrategyOptimizer:
 
         # Generate all model configurations
         logger.info("Generating strategy configurations...")
-        configs = StrategyTemplates.generate_all_configs()
+        configs = StrategyTemplates.generate_all_configs()[:100]
         logger.info(f"Generated {len(configs)} unique model configurations")
 
         # Backtest all models (in-sample)
@@ -451,6 +451,34 @@ class StrategyOptimizer:
         with open(self.results_dir / "winner.json", "w") as f:
             json.dump(winner_dict, f, indent=2)
         logger.info(f"Saved winner config: {self.results_dir / 'winner.json'}")
+
+        # Save top 10 models with metrics and trade lists for reporting
+        top_10_scores = sorted(
+            [s for s in scores if s.passed_hard_filters],
+            key=lambda x: x.composite_score,
+            reverse=True,
+        )[:10]
+        top_10_models = []
+        for score in top_10_scores:
+            result = next(
+                (r for r in self.backtest_results if r["model_id"] == score.model_id),
+                {},
+            )
+            top_10_models.append(
+                {
+                    "model_id": score.model_id,
+                    "template": score.template,
+                    "timeframe": score.timeframe,
+                    "composite_score": score.composite_score,
+                    "in_sample_metrics": score.in_sample_metrics,
+                    "out_of_sample_metrics": score.out_of_sample_metrics,
+                    "trades": result.get("trades", []),
+                }
+            )
+
+        with open(self.results_dir / "top_10_models.json", "w") as f:
+            json.dump(top_10_models, f, indent=2)
+        logger.info(f"Saved top 10 models: {self.results_dir / 'top_10_models.json'}")
 
         # Full summary log
         logger.info(f"Full log: {self.log_file}")

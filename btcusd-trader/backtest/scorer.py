@@ -32,7 +32,7 @@ class ModelScorer:
         "min_sharpe": 0.0,        # No negative Sharpe (allow zero)
         "min_profit_factor": 1.1, # Profitable trades > losses
         "max_drawdown": 100.0,    # Allow high drawdown (backtesting artifact)
-        "min_trade_count": 10,    # Minimum trades for statistics
+        "min_trade_count": 30,    # Minimum trades for statistics
         "max_consecutive_losses": 15,  # Realistic max consecutive losses
     }
 
