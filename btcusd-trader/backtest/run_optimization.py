@@ -94,45 +94,50 @@ class StrategyOptimizer:
 
         template = config.template
         params = config.parameters["indicators"]
-        exit_config = config.parameters["exit"]
+        exit_cfg = config.parameters["exit"]
 
-        def signal_func(df: pd.DataFrame, idx: int, mode: str = "entry", direction: str = None) -> int:
-            """
-            Signal function for backtester.
+        exit_ratios = {
+            "fixed_rr_1.5":   (1.5, 2.25),
+            "fixed_rr_2.0":   (1.5, 3.0),
+            "fixed_rr_2.5":   (1.5, 3.75),
+            "fixed_rr_3.0":   (1.5, 4.5),
+            "atr_based":      (1.5, 3.0),
+            "trailing_stop":  (1.5, 3.0),
+            "signal_reversal":(1.5, 3.0),
+        }
+        sl_mult, tp_mult = exit_ratios.get(exit_cfg, (1.5, 3.0))
 
-            Returns:
-                1 = entry long
-                -1 = entry short
-                2 = exit signal
-                0 = no signal
-            """
-            try:
-                if mode == "entry":
-                    if template == "TEMPLATE_A":
-                        return self._signal_template_a(df, idx, params)
-                    elif template == "TEMPLATE_B":
-                        return self._signal_template_b(df, idx, params)
-                    elif template == "TEMPLATE_C":
-                        return self._signal_template_c(df, idx, params)
-                    elif template == "TEMPLATE_D":
-                        return self._signal_template_d(df, idx, params)
-                    elif template == "TEMPLATE_E":
-                        return self._signal_template_e(df, idx, params)
-                elif mode == "exit":
-                    if exit_config == "signal_reversal":
-                        # Reversed entry signal acts as exit
-                        if direction == "long":
-                            return self._signal_template_a(df, idx, params) == -1
-                        else:
-                            return self._signal_template_a(df, idx, params) == 1
-                    # Other exits handled by TP/SL in engine
-                    return 0
-
-            except (KeyError, IndexError, TypeError):
-                return 0
-
+        def _get_entry_signal(df, idx):
+            if template == "TEMPLATE_A":
+                return self._signal_template_a(df, idx, params)
+            elif template == "TEMPLATE_B":
+                return self._signal_template_b(df, idx, params)
+            elif template == "TEMPLATE_C":
+                return self._signal_template_c(df, idx, params)
+            elif template == "TEMPLATE_D":
+                return self._signal_template_d(df, idx, params)
+            elif template == "TEMPLATE_E":
+                return self._signal_template_e(df, idx, params)
             return 0
 
+        def signal_func(df, idx, mode="entry", direction=None):
+            try:
+                if mode == "entry":
+                    return _get_entry_signal(df, idx)
+                elif mode == "exit":
+                    if exit_cfg == "signal_reversal":
+                        sig = _get_entry_signal(df, idx)
+                        if direction == "long" and sig == -1:
+                            return 1
+                        if direction == "short" and sig == 1:
+                            return 1
+                    return 0
+            except Exception:
+                return 0
+            return 0
+
+        signal_func.sl_mult = sl_mult
+        signal_func.tp_mult = tp_mult
         return signal_func
 
     def _signal_template_a(self, df: pd.DataFrame, idx: int, params: Dict) -> int:
@@ -297,6 +302,7 @@ class StrategyOptimizer:
                 "timeframe": config.timeframe,
                 "in_sample_metrics": metrics,
                 "config": config.to_dict(),
+                "trades": engine.get_trades_as_dicts(),  # Add trades
             }
 
             logger.info(
@@ -424,17 +430,19 @@ class StrategyOptimizer:
         leaderboard.to_csv(self.results_dir / "leaderboard.csv", index=False)
         logger.info(f"Saved leaderboard: {self.results_dir / 'leaderboard.csv'}")
 
-        # Winner config
+        # Find winner result with trades
+        winner_result = next(
+            r for r in self.backtest_results if r["model_id"] == winner.model_id
+        )
+
+        # Winner config with trades
         winner_dict = {
             "model_id": winner.model_id,
             "timeframe": winner.timeframe,
             "template": winner.template,
-            "parameters": next(
-                r["config"]["parameters"]
-                for r in self.backtest_results
-                if r["model_id"] == winner.model_id
-            ),
+            "parameters": winner_result["config"]["parameters"],
             "in_sample_metrics": winner.in_sample_metrics,
+            "trades": winner_result.get("trades", []),  # Include trades
         }
 
         if winner.out_of_sample_metrics:
@@ -459,6 +467,18 @@ def main():
 
     try:
         optimizer.run_full_optimization()
+
+        # Export results to Windows after optimization completes
+        logger.info("Exporting results to Windows...")
+        import subprocess
+        export_script = Path(__file__).parent.parent.parent / "export_results.sh"
+        if export_script.exists():
+            try:
+                subprocess.run(["bash", str(export_script), "false"], check=False)
+                logger.info("✅ Results exported successfully!")
+            except Exception as e:
+                logger.warning(f"Could not export results: {e}")
+
     except Exception as e:
         logger.error(f"Optimization failed: {e}", exc_info=True)
 

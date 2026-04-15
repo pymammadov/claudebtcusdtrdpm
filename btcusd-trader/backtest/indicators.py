@@ -178,11 +178,11 @@ class IndicatorLibrary:
         Returns:
             Dictionary with all indicator arrays keyed by name
         """
-        close = self.df["close"].values
-        open_ = self.df["open"].values
-        high = self.df["high"].values
-        low = self.df["low"].values
-        volume = self.df["volume"].values
+        close = self.df["close"].values.copy()
+        open_ = self.df["open"].values.copy()
+        high = self.df["high"].values.copy()
+        low = self.df["low"].values.copy()
+        volume = self.df["volume"].values.copy()
 
         # TREND - EMA
         for period in [8, 13, 21, 34, 50, 89, 200]:
