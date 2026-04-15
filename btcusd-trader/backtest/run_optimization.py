@@ -302,6 +302,7 @@ class StrategyOptimizer:
                 "timeframe": config.timeframe,
                 "in_sample_metrics": metrics,
                 "config": config.to_dict(),
+                "trades": engine.get_trades_as_dicts(),  # Add trades
             }
 
             logger.info(
@@ -429,17 +430,19 @@ class StrategyOptimizer:
         leaderboard.to_csv(self.results_dir / "leaderboard.csv", index=False)
         logger.info(f"Saved leaderboard: {self.results_dir / 'leaderboard.csv'}")
 
-        # Winner config
+        # Find winner result with trades
+        winner_result = next(
+            r for r in self.backtest_results if r["model_id"] == winner.model_id
+        )
+
+        # Winner config with trades
         winner_dict = {
             "model_id": winner.model_id,
             "timeframe": winner.timeframe,
             "template": winner.template,
-            "parameters": next(
-                r["config"]["parameters"]
-                for r in self.backtest_results
-                if r["model_id"] == winner.model_id
-            ),
+            "parameters": winner_result["config"]["parameters"],
             "in_sample_metrics": winner.in_sample_metrics,
+            "trades": winner_result.get("trades", []),  # Include trades
         }
 
         if winner.out_of_sample_metrics:

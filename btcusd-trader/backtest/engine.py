@@ -178,6 +178,24 @@ class BacktestEngine:
         self._calculate_metrics(entry_balance)
         return self.metrics
 
+    def get_trades_as_dicts(self) -> list[dict]:
+        """Export trades as list of dictionaries."""
+        return [
+            {
+                "entry_idx": t.entry_idx,
+                "entry_price": float(t.entry_price),
+                "entry_time": str(t.entry_time),
+                "exit_idx": t.exit_idx,
+                "exit_price": float(t.exit_price),
+                "exit_time": str(t.exit_time),
+                "direction": t.direction,
+                "size": float(t.size),
+                "pnl": float(t.pnl),
+                "pnl_pct": float(t.pnl_pct),
+            }
+            for t in self.trades
+        ]
+
     def _calculate_metrics(self, initial_balance: float):
         """Calculate performance metrics."""
         if not self.trades:
