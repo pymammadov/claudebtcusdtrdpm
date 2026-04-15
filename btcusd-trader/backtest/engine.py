@@ -17,7 +17,6 @@ class BacktestConfig:
     taker_fee: float = 0.0006  # 0.06%
     slippage: float = 0.0004  # 0.04% per side
     risk_per_trade_pct: float = 0.01  # 1%
-    max_drawdown_pct: float = 0.20  # 20% max allowed
     max_open_positions: int = 1
 
 
@@ -72,6 +71,7 @@ class BacktestEngine:
         n = len(self.df)
         balance = 10000.0
         entry_balance = balance
+        fixed_risk_amount = entry_balance * self.config.risk_per_trade_pct
         position = None
         equity = [balance]
 
@@ -149,8 +149,7 @@ class BacktestEngine:
                         equity.append(balance)
                         continue
 
-                    risk_amount = balance * self.config.risk_per_trade_pct
-                    size = risk_amount / atr
+                    size = fixed_risk_amount / atr
 
                     sl_mult = getattr(signal_func, 'sl_mult', 1.5)
                     tp_mult = getattr(signal_func, 'tp_mult', 3.0)
@@ -164,10 +163,7 @@ class BacktestEngine:
                         sl_price = entry_price + sl_dist
                         tp_price = entry_price - tp_dist
 
-                    entry_cost = size * entry_price * (1 + self.config.taker_fee)
-                    if entry_cost <= balance:
-                        position = (direction, entry_price, size, i, tp_price, sl_price)
-                        balance -= entry_cost
+                    position = (direction, entry_price, size, i, tp_price, sl_price)
 
             equity.append(balance)
 
