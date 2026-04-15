@@ -467,6 +467,18 @@ def main():
 
     try:
         optimizer.run_full_optimization()
+
+        # Export results to Windows after optimization completes
+        logger.info("Exporting results to Windows...")
+        import subprocess
+        export_script = Path(__file__).parent.parent.parent / "export_results.sh"
+        if export_script.exists():
+            try:
+                subprocess.run(["bash", str(export_script), "false"], check=False)
+                logger.info("✅ Results exported successfully!")
+            except Exception as e:
+                logger.warning(f"Could not export results: {e}")
+
     except Exception as e:
         logger.error(f"Optimization failed: {e}", exc_info=True)
 
