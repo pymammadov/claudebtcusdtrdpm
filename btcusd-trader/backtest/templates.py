@@ -294,9 +294,10 @@ class StrategyTemplates:
         return configs
 
     @staticmethod
-    def generate_all_configs() -> List[StrategyConfig]:
+    def generate_all_configs(timeframes: List[str] = None) -> List[StrategyConfig]:
         """Generate all strategy configurations across all templates and timeframes."""
-        timeframes = ["15m", "1h", "4h"]
+        if timeframes is None:
+            timeframes = ["15m", "1h", "4h"]
 
         all_configs = []
 
